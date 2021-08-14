@@ -1,0 +1,11 @@
+DoomEdNums
+{
+	31217 = MainBattleTank
+	31218 = MainBattleTankDead
+	31219 = MainBattleTankEmpty
+}
+
+DamageType TankCrush
+{
+	Obituary = "%o was flattened by a tank"
+}

@@ -1,0 +1,36 @@
+MBT/tankshot1 "Sounds/tankshot1.ogg"
+MBT/tankshot2 "Sounds/tankshot2.ogg"
+MBT/tankshot3 "Sounds/tankshot3.ogg"
+MBT/tankmove "Sounds/tankmove.ogg"
+MBT/tankidle "Sounds/tankidle.ogg"
+MBT/turretrotate "Sounds/turretspin.ogg"
+MBT/tankexplode "Sounds/tankexplode.ogg"
+MBT/burningturret1 "Sounds/burning1.ogg"
+MBT/burningturret2 "Sounds/burning2.ogg"
+MBT/groundslam "Sounds/tankslam.ogg"
+MBT/shellimpact "Sounds/shellexplode.ogg"
+
+$limit MBT/tankshot1 0
+$limit MBT/tankshot2 0
+$limit MBT/tankshot3 0
+$limit MBT/tankmove 0
+$limit MBT/tankidle 0
+$limit MBT/turretrotate 0
+$limit MBT/tankexplode 0
+$limit MBT/burningturret1 0
+$limit MBT/burningturret2 0
+$limit MBT/groundslam 0
+$limit MBT/shellimpact 0
+
+$random MBT/TankShot
+{
+	MBT/tankshot1
+	MBT/tankshot2
+	MBT/tankshot3
+}
+
+$random MBT/Burning
+{
+	MBT/burningturret1
+	MBT/burningturret2
+}

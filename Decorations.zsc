@@ -1,0 +1,182 @@
+//Destroyed tank decoration
+Class MainBattleTankDead : Actor
+{
+	Default
+	{
+		//$Title Destroyed Tank
+		//$Category Obstacles
+		//$Angled
+		//$Sprite MBTRA1
+		//$IsDecoration
+		Radius 90;
+		Height 78;
+		Mass 50000;
+		XScale 1.2;
+		+Solid;
+		+Shootable;
+		+NoDamage;
+		+NoBlood;
+		+PuffOnActors;
+		+NotAutoAimed;
+	}
+	Int User_TurretAngle; //The angle of the turret in relation to the chassis' angle.
+	Bool User_RandomTurretAngle; //Should the turrets angle be random for every tank ? False by default.
+	Int RandomAngle; //The random angle to use in relation to the chassis if the above boolean is true.
+	Override Void PostBeginPlay()
+	{
+		Super.PostBeginPlay();
+		RandomAngle = Random (0,360);
+		Bool TurretSpawned;
+		Actor Turret;
+		[TurretSpawned,Turret] = A_SpawnItemEx ("MainBattleTankTurretDead",flags:SXF_SETMASTER);
+		If (User_RandomTurretAngle == False) {Turret.Angle = Self.Angle + User_TurretAngle;}
+		If (User_RandomTurretAngle == True) {Turret.Angle = Self.Angle + RandomAngle;}
+	}
+	States
+	{
+		Spawn:
+			MBCD A -1;
+			Stop;
+	}
+}
+//Destroyed tank turret
+Class MainBattleTankTurretDead : Actor
+{
+	Default
+	{
+		Radius 55;
+		Height 36;
+		Mass 10000;
+		XScale 1.2;
+		+Solid;
+		+Shootable;
+		+NoDamage;
+		+NoBlood;
+		+PuffOnActors;
+		+NotAutoAimed;
+	}
+	Double FireRadius; //The radius of the light for when the turret is ablaze.
+	Double LightDuration; //For the random pulse light duration when turret is ablaze.
+	//Variables for the particle spawning once the turret is dead.
+	Int RNGLife;
+	Double RNGSize;
+	Double RNGVel;
+	Double RNGXOfs;
+	Double RNGYOfs;
+	//==============
+	Override Void Tick()
+	{
+		Super.Tick();
+		If (Master)
+		{
+			Warp (Master,zofs:74,flags:WARPF_NOCHECKPOSITION|WARPF_STOP|WARPF_INTERPOLATE|WARPF_USECALLERANGLE);
+		}
+		If (IsFrozen()) {A_StopSound (39485);}
+	}
+	Void A_RandomizeParticleValues()
+	{
+		//Random values for the particle spawning.
+		RNGXOfs = FRandom (-48,48);
+		RNGYOfs = FRandom (-48,48);
+		RNGVel = FRandom (2,8);
+		RNGSize = FRandom (2,6);
+		RNGLife = 35* RandomPick (1,2);
+		//=================================
+	}
+	States
+	{
+		Spawn:
+			MBTD A 0 NoDelay //Initialize the destroyed turrets' dynamic lighting.
+			{
+				FireRadius = FRandom (24,64);
+				LightDuration = FRandom (0.1,0.6);
+				A_AttachLight ("TurretFire",DynamicLight.PulseLight,"DFD100",FireRadius,FireRadius-6,DynamicLight.LF_ATTENUATE,(0,0,12),LightDuration);
+			}
+			MBTD ABCD 4 Bright
+			{
+				A_StartSound ("MBT/Burning",39485,CHANF_LOOPING,attenuation:0.8);
+
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+			}
+			Goto Spawn+1;
+	}
+}
+//Note: Yes this is literally the above code copy & pasted, but with different sprites, if it ain't broke don't fix it.
+Class MainBattleTankEmpty : Actor
+{
+	Default
+	{
+		//$Title Empty/Abandoned Tank
+		//$Category Obstacles
+		//$Angled
+		//$Sprite MBTSA1
+		//$IsDecoration
+		Radius 90;
+		Height 78;
+		Mass 50000;
+		XScale 1.2;
+		+Solid;
+		+Shootable;
+		+NoDamage;
+		+NoBlood;
+		+PuffOnActors;
+		+NotAutoAimed;
+	}
+	Int User_TurretAngle; //The angle of the turret in relation to the chassis' angle.
+	Bool User_RandomTurretAngle; //Should the turrets angle be random for every tank ? False by default.
+	Int RandomAngle; //The random angle to use in relation to the chassis if the above boolean is true.
+	Override Void PostBeginPlay()
+	{
+		Super.PostBeginPlay();
+		RandomAngle = Random (0,360);
+		Bool TurretSpawned;
+		Actor Turret;
+		[TurretSpawned,Turret] = A_SpawnItemEx ("MainBattleTankTurretEmpty",flags:SXF_SETMASTER);
+		If (User_RandomTurretAngle == False) {Turret.Angle = Self.Angle + User_TurretAngle;}
+		If (User_RandomTurretAngle == True) {Turret.Angle = Self.Angle + RandomAngle;}
+	}
+	States
+	{
+		Spawn:
+			MBCM A -1;
+			Stop;
+	}
+}
+
+Class MainBattleTankTurretEmpty : Actor
+{
+	Default
+	{
+		Radius 55;
+		Height 36;
+		Mass 20000;
+		XScale 1.2;
+		+Solid;
+		+Shootable;
+		+NoDamage;
+		+NoBlood;
+		+PuffOnActors;
+		+NotAutoAimed;
+	}
+	Override Void Tick()
+	{
+		Super.Tick();
+		If (Master)
+		{
+			Warp (Master,zofs:74,flags:WARPF_NOCHECKPOSITION|WARPF_STOP|WARPF_INTERPOLATE|WARPF_USECALLERANGLE);
+		}
+	}
+	States
+	{
+		Spawn:
+			MBTI A -1;
+			Loop;
+	}
+}

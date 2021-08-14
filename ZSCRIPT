@@ -1,0 +1,650 @@
+#Include "Decorations.zsc"
+
+Class MainBattleTank : Actor
+{
+	Default
+	{
+		//$Sprite MBTSA1
+		//$Category Vehicles
+		//$Title Main Battle Tank
+		Tag "Main Battle Tank";
+		Health 5000;
+		Radius 90;
+		Height 78;
+		DeathHeight 72;
+		Speed 8;
+		FastSpeed 12;
+		Mass 50000;
+		XScale 1.2;
+		DamageFactor "RailGun", 0.5;
+		DamageFactor "TankShell", 0.75;
+		DamageFactor "TankCrush", 0.0;
+		DamageFactor "AutocannonShell", 0.25;
+		RipLevelMin 5;
+		Species "Tank";
+		Species "MainBattleTank"; //So the tank can't harm itself.
+		Obituary "%o was obliterated by a tank shell"; //So the proper obituary will appear instead of the generic "(Player Name) died".
+		FriendlySeeBlocks 256;
+		Monster;
+		-ActivateMCross;
+		-CanUseWalls;
+		-CanPushWalls;
+		+NoRadiusDmg;
+		+LookAllAround;
+		+NeverRespawn; //Doesn't make sense for a tank to magically reappear.
+		+Telestomp;
+		+NoTelefrag;
+		+Frightening; //Turn this on again.
+		+NoFear;
+		+DontSquash;
+		+DontHarmClass;
+		+DontDrain;
+		+NoBlood;
+		+NoPain;
+		+PuffOnActors;
+		+AvoidMelee;
+		+NoInfightSpecies;
+		+DontMorph;
+	}
+	enum MBTSoundChannels
+	{
+		CHAN_IDLING = 10396,
+		CHAN_MOVING = 10397
+	}
+	Bool A_IsPlayerClose (Double Mindist = 0) //Custom function by Agent_Ash cause' lord knows I have no idea what this black speech means to be able to type it out on my own.
+	{
+		For(Int pn = 0; pn < MAXPLAYERS; pn++)
+		{
+			If(!PlayerInGame[pn])
+				Continue;
+			PlayerInfo plr = Players[pn];
+			If(plr && plr.mo && Distance3D(plr.mo) <= MinDist)
+			{
+				Return True;
+				Break;
+			}
+		}
+		Return False;
+	}
+	Actor Turret; //Pointer to the tank turret.
+	Actor FrontDamage; //Pointer to the actor that performs damage in front of the chassis.
+	Int TankFallSpeed; //Measures how fast the tank fell to the floor.
+	Bool User_NoCrushing; //If set to true, the tank won't spawn the actor that crushes anything in front of it.
+	Bool User_NoSmartAim; //If set to true, the tank will not predict the trajectory of its' target when firing.
+	Bool User_Stationary; //If set to true, the tank will not move and stand still and shoot, like the tanks in Half-Life.
+	Bool User_Fearless;   //If set to true, the tank will not run away from it's target if it's too big or is another tank.
+	Override Void Tick()
+	{
+		Super.Tick();
+		//This is here to fake/emulate the whole tank being frozen, since I can't force the turret to
+		//an ice death of its own due to it transferring all the damage it takes to the chassis.
+		If (Self.bIceCorpse == True)
+		{
+			A_SetSize (96,96);
+			If (Turret) //If this null check wasn't here, the game would abort every time.
+			{
+				Turret.A_SetTranslation ("Ice"); //Gives the turret the ice translation that actors get when frozen with "MDK ice".
+			}
+		}
+		//Stop all sounds if the game is frozen.
+		If (IsFrozen())
+		{
+			A_StopSound (CHAN_IDLING);
+			A_StopSound (CHAN_MOVING);
+			Return;
+		}
+		//If the tank fell from a high enough height, cause a small earthquake whose intensity increases with the tanks' speed and play a metal slamming sound.
+		If (Self.vel.z < 0) {TankFallSpeed++;}
+		//This code to make the tank actually crush stuff it falls on breaks sometimes so I won't be using it unless I can fix it.
+		//If (tankfallspeed >= 8 && CheckBlock (CBF_NOLINES|CBF_DROPOFF,zofs:Self.Height+2))
+		//{A_Explode (1024,192,XF_NOTMISSILE|XF_EXPLICITDAMAGETYPE,True,192,damagetype:"TankCrush");}
+		If (Self.pos.z - Self.GetZAt() <= 0 && TankFallSpeed >= 16)
+		{
+			A_QuakeEx (4,4,3,35*2,0,768,flags:QF_SCALEDOWN);
+			A_StartSound ("MBT/GroundSlam",158371);
+			TankFallSpeed = 0; //Reset the falling speed variable.
+		}
+		//=========================================================
+		//If the tank is in its' spawn state, begin playing the idle sound on a loop.
+		If (InStateSequence (CurState, ResolveState ("Spawn")))
+		{
+			A_StartSound ("MBT/TankIdle",CHAN_IDLING,CHANF_LOOPING,attenuation:0.75);
+		}
+		//If the tank is in its' see state, stop the idle sound and beging the moving one.
+		If (InStateSequence (CurState, ResolveState ("See"))) //This works better than the ActiveSound property because it plays the moving sound constantly when the tank moves.
+		{
+			A_StopSound (CHAN_IDLING); //Stop the tanks' idle sound if it's moving.
+			A_StartSound ("MBT/TankMove",CHAN_MOVING,CHANF_LOOPING,attenuation:0.75);
+		}
+	}
+	//Initializes the tanks' turret and front crushing damage.
+	Override Void PostBeginPlay()
+	{
+		Super.PostBeginPlay();
+
+		Turret = Spawn ("MainBattleTankTurret",self.pos); //Spawn the turret at the chassis' position.
+		Turret.Master = Self; //Make the chassis the turrets' master, so the turret can warp to the chassis.
+		Turret.Angle = Self.Angle; //Set the turrets' angle to that of the chassis.
+		If (User_NoSmartAim) {MainBattleTankTurret(Turret).NoSmartAim = True;} //If the NoSmartAim user variable is on, then set the similarly named internal variable that the turret has on.
+
+		If (User_NoCrushing) {Return;} //If the NoCrushing user variable is enabled, don't spawn the FrontDamage actor
+		FrontDamage = Spawn ("MBTFrontDamage",Self.pos); //Spawn the actor that applies the crushing damage in front of the tank when it's moving.
+		FrontDamage.Master = Self; //Make the tank chassis the actors' master.
+
+		//If the chassis is set to ambush the player and/or is dormant, then set said flags to the turret as well.
+		If (Self.bAmbush && Turret) {Turret.bAmbush = True;}
+		If (Self.bDormant && Turret) {Turret.bDormant = True;}
+		If (Self.GetRenderStyle() == STYLE_None && Turret) {Turret.A_SetRenderStyle (1.0,STYLE_None);}
+	}
+	Override Void OnDestroy() //Removes the turret and actor that performs damage in front of the tank if the chassis is removed.
+	{
+		Super.OnDestroy();
+		If (Turret){Turret.Destroy();}
+		If (FrontDamage){FrontDamage.Destroy();}
+	}
+	//This should make it so the chassis doesn't collide with its' turret, that way the tank will be able to move up and down.
+	Override Bool CanCollideWith (Actor Other,Bool Passive)
+	{
+		Super.CanCollideWith(Other,Passive);
+		If (Turret && Other && Other == Turret) {Return False;}
+		Return True;
+	}
+	//Uses the FrontDamage actors' obituary if the player was killed by it, otherwise it uses the tanks' own obituary.
+	Override String GetObituary (Actor Victim, Actor Inflictor, Name MOD, Bool PlayerAttack)
+	{
+		String Message;
+		If (Inflictor){Message = Inflictor.GetObituary (Victim, Inflictor, MOD, PlayerAttack);}
+		If (!Message){Message = Super.GetObituary (Victim, Inflictor, MOD, PlayerAttack);}
+		Return Message;
+	}
+	States
+	{
+		Spawn:
+			MBCM A 8 A_LookEx (maxseedist:10240+2048,maxheardist:3072);
+			Loop;
+		See:
+			MBCM AABB 2
+			{
+				A_Chase();
+				A_QuakeEx (1,1,1,2,0,384); //So the ground shakes a bit as it moves across it.
+				//In theory the below code should make the tank keep some distance from any nearby players if it's friendly, in practive it does nothing for some reason.
+				If (A_IsPlayerClose (768) && Self.bFriendly == True) {bFrightened = True; A_Stop();}
+				Else {bFrightened = False;}
+				If (Target && User_Fearless == False) //Null check, also checks if User_Fearless is on to run the code inside the brackets.
+				{
+					//Retreat if the target is close and about as big if not bigger than a Cyberdemon or if it's another tank. Or if the target is too close and has over 600 health.
+					If (Distance3D (Target) <= 1024 && Target.Height >= 100 && Target.Radius >= 24 || Distance3D (Target) <= 1024 && Target.GetClassName() == 'MainBattleTank' ||Distance3D (Target) <= 512 && Target.Health >= 600)
+					{
+						SetStateLabel ("MoveAway");
+					}
+				}
+			}
+			Loop;
+		MoveAway:
+			TNT1 A 0
+			{
+				A_FaceTarget();
+				Speed = -8;
+				Angle = Angle-180;
+			}
+			MBCM AA 2
+			{
+				A_Chase (Null,Null,CHF_NODIRECTIONTURN);
+				A_QuakeEx (1,1,1,2,0,384);
+			}
+			TNT1 A 0
+			{
+				A_FaceTarget();
+				Angle = Angle-180;
+			}
+			MBCM BB 2
+			{
+				A_Chase (Null,Null,CHF_NODIRECTIONTURN|CHF_NORANDOMTURN);
+				A_QuakeEx (1,1,1,2,0,384);
+			}
+			TNT1 A 0 {Speed = 8;} //Put the tanks' speed back to normal again.
+			Goto See;
+		Death:
+			MBCD A 1
+			{
+				A_SpawnItemEx ("MBTExplosion",flags:SXF_SETMASTER);
+				A_StopSound (CHAN_MOVING); //Stops the sound of the tank moving.
+				A_StopSound (CHAN_IDLING); //Stop the idle engine sound if it's playing.
+				bSolid = True;
+				bShootable = True;
+				bNoDamage = True;
+				bNeverTarget = True;
+				bNotAutoAimed = True;
+				A_SetSize (Radius,72); //There's a small gap you can fire through between the turret and chassis once the tank is dead otherwise
+			}
+			MBCD A -1;
+			Stop;
+	}
+}
+
+Class MainBattleTankTurret : Actor
+{
+	Default
+	{
+		Radius 55;
+		Height 36;
+		DeathHeight 36;
+		Mass 10000;
+		FriendlySeeBlocks 256;
+		MaxTargetRange 10240;
+		RipLevelMin 5;
+		MinMissileChance 100;
+		XScale 1.2;
+		Obituary "%o was obliterated by a tank shell";
+		Species "MainBattleTank";
+		Monster;
+		-ActivateMCross;
+		-CanUseWalls;
+		-CanPushWalls;
+		-IsMonster;
+		-CountKill;
+		+LookAllAround;
+		+MissileMore;
+		+MissileEvenMore;
+		+NeverRespawn; //Doesnt make sense for a tank to magically reappear.
+		+Telestomp;
+		+NoTelefrag;
+		+NoFear;
+		+DontSquash;
+		+DontHarmClass;
+		+DontDrain;
+		+NoBlood;
+		+NoPain;
+		+PuffOnActors;
+		+NotAutoAimed;
+		+NoDamage;
+		+NoInfightSpecies;
+		+DontMorph;
+	}
+	enum TurretSoundChannels {CHAN_TURRET = 183745, CHAN_BURNING = 19384}
+	Actor Shell;
+	Bool NoSmartAim; //If set on by the chassis having User_NoSmartAim set to true, then it will make the tank shell projectile not account for its' targets' movement.
+	Double FireRadius; //The radius of the light for when the turret is ablaze.
+	Double LightDuration; //For the random pulse light duration when turret is ablaze.
+	Bool ShellLOFInvalid;
+	//Variables for the particle spawning once the turret is dead.
+	Int RNGLife;
+	Double RNGSize;
+	Double RNGVel;
+	Double RNGXOfs;
+	Double RNGYOfs;
+	//==============
+	Override Void Tick()
+	{
+		Super.Tick();
+		//This is how the turret actually stays attached to the chassis.
+		If (Master) //Only warp to the master actor if it actually exists.
+		{
+			A_CopyFriendliness(); //Also copy whatever the chassis' affiliation is.
+			//This check is here because for some reason the turret slightly floats above the chassis when the chassis is destroyed
+			If (Self.InStateSequence (Self.CurState, Self.ResolveState ("Death")))
+			{
+				Warp (Master,zofs:74,flags:WARPF_NOCHECKPOSITION|WARPF_STOP|WARPF_INTERPOLATE|WARPF_USECALLERANGLE|WARPF_COPYPITCH);
+				Return;
+			}
+			Warp (Master,zofs:78,flags:WARPF_NOCHECKPOSITION|WARPF_STOP|WARPF_INTERPOLATE|WARPF_USECALLERANGLE|WARPF_COPYPITCH);
+		}
+		//Die if the chassis is dead and spawn a flickering dynamic light.
+		If (Master)
+		{
+			If (Self.InStateSequence (Self.CurState, Self.ResolveState ("Death"))) {Return;} //So the rest of the turrets' death state can continue.
+			If (Master.InStateSequence (Master.CurState, Master.ResolveState ("Death")))
+			{
+				FireRadius = FRandom (24,64);
+				LightDuration = FRandom (0.1,0.6);
+				Self.SetStateLabel ("Death");
+				Self.bCorpse = True;
+				Self.A_AttachLight ("TurretFire",DynamicLight.PulseLight,"DFD100",FireRadius,FireRadius-6,DynamicLight.LF_ATTENUATE,(0,0,12),LightDuration);
+			}
+		}
+		//If the game is frozen, stop the sound of the turret rotating or burning if it's playing.
+		If (IsFrozen())
+		{
+			A_StopSound (CHAN_TURRET);
+			A_StopSound (CHAN_BURNING);
+			Return;
+		}
+		//If the turret is spinning, then play the rotating sound.
+		If (InStateSequence (CurState, ResolveState ("FaceTarget")))
+		{
+			A_StartSound ("MBT/TurretRotate",CHAN_TURRET,CHANF_LOOPING);
+		}
+	}
+	//Transfers any damage it takes to the chassis.
+	Override Int DamageMobj (Actor Inflictor, Actor Source, Int Damage, Name MOD, Int Flags, Double Angle)
+	{
+		If (Master)
+		{
+			Master.DamageMobj (Inflictor,Source,Damage,MOD,Flags,Angle);
+		}
+		Return 0;
+	}
+	Void A_RandomizeParticleValues()
+	{
+		//Random values for the particle spawning.
+		RNGXOfs = FRandom (-48,48);
+		RNGYOfs = FRandom (-48,48);
+		RNGVel = FRandom (2,8);
+		RNGSize = FRandom (2,6);
+		RNGLife = 35* RandomPick (1,2);
+		//=================================
+	}
+	States
+	{
+		Spawn:
+			TNT1 A 0 {If (Target){Target = Null;}} //Sometimes the turret may begin attacking the player even if friendly, this should prevent that.
+			MBTI A 8
+			{
+				A_LookEx (LOF_NOJUMP,maxseedist:10240+2048,maxheardist:3072,label:"Alert");
+				//Replicates the behaviour of A_LookEx without the LOF_NOJUMP flag on.
+				If (Self.Target != Null && bAmbush == False){SetStateLabel ("Alert");}
+				If (Master) {Self.Angle = Master.Angle;}
+				If (Master && bAmbush == False)
+				{
+					//If the chassis' has a target, the transfer that target pointer to the turret as well.
+					If (Master.Target != Null)
+					{
+						Self.Target = Master.Target; //Read the below comment, I had to put it here as well so it only doesn't have the same angles as the chassis when it has to turn to fire at a target.
+						SetStateLabel ("FaceTarget");
+					}
+				}
+				//This has to be done for the Ambush flag to work properly on the turret for some reason.
+				//If the turret has a target, the Ambush flag is on, and there is a valid line of sight to the target, then begin chasing it.
+				If (Self.Target != Null && bAmbush && CheckIfTargetInLOS()) {SetStateLabel ("Alert");}
+			}
+			Goto Spawn+1;
+		Alert:
+			MBTI A 8
+			{
+				A_StopSound (CHAN_TURRET); //Stop the rotating sound if the turret is simply alert.
+				If (Master) {Self.Angle = Master.Angle;} //Sets the turrets' angle to that of the chassis when it's not firing.
+				A_Chase (null,"FaceTarget",CHF_DONTMOVE|CHF_DONTTURN);
+				//Copied over from the code below, so the turret forgets its' target if it is dead, this is basically here just in case.
+				If ( (Target && Target.Health <= 0) || (Target && Target.Health <= 0) )
+				{
+					Self.Target = Null;
+				}
+				If (Master) {Self.Angle = Master.Angle;}
+			}
+			Loop;
+		FaceTarget:
+			TNT1 A 0
+			{
+				//So the turret doesn't move at all when dormant.
+				If (bDormant) {SetStateLabel ("Spawn");}
+			}
+			MBTI A 1
+			{
+				//If the target is dead while the tank is rotating at it, then go back to the Alert state. This was originally here to fix a weird bug that now doesn't occur, but I'm keeping it because it fixes another bug that fixates the turret on a dead target.
+				If ( (Target && Target.Health <= 0) || (Target && Target.Health <= 0) )
+				{
+					Self.Target = Null;
+					Self.SetStateLabel ("Alert");
+				}
+				A_FaceTarget (3,5,flags:FAF_MIDDLE);
+				//The below code fires a ray every time the turret rotates to face the target, if the ray hits the target, that means that it has a line of sight to it, so it'll fire.
+				FLineTraceData CanHitTarget;
+				LineTrace (Self.Angle,10240,Clamp(Self.Pitch, -45, 30),TRF_THRUHITSCAN|TRF_NOSKY|TRF_SOLIDACTORS,16,250,data:CanHitTarget);
+				If (CanHitTarget.HitActor && Target && CanHitTarget.HitActor == Target)
+				{
+					SetStateLabel ("FireCannon");
+				}
+				Return null;
+			}
+			Loop;
+		FireCannon: //Each MBTI frame is about a second
+			MBTI AAAAAAAAAAAAAAAA 2 A_FaceTarget (3,5,flags:FAF_MIDDLE);
+			MBTI AAAAAAAAAAAAAAAA 2 A_FaceTarget (3,5,flags:FAF_MIDDLE);
+			MBTI AAAAAAAAAAAAAAAA 2 A_FaceTarget (3,5,flags:FAF_MIDDLE);
+			MBTF A 4 Bright
+			{
+				Shell = A_SpawnProjectile ("MBTShell",-1);
+				If (Target){Shell.Tracer = Self.Target;} //Makes the turrets' target the shells' tracer so the shell can hit the target with VelIntercept
+				If (Shell) {Shell.Target = Self.Master;} //Makes the shells' target be the chassis, so monsters target it instead of the turret.
+				If (NoSmartAim == True) {MBTShell(Shell).NoSmartAim = True;} //If NoSmartAim is on for the turret, then set it to the shell itself too so it doesn't predict its' targets' movement.
+				A_StopSound (CHAN_TURRET); //Stop the rotating sound.
+				A_StartSound ("MBT/TankShot",CHAN_TURRET,attenuation:0.25);
+				A_QuakeEx (3,3,2,35*1,0,768);
+			}
+			MBTF B 4 Bright;
+			MBTF CDEFGH 4 Bright;
+			MBTI A 35;
+			Goto Spawn;
+		Death:
+			MBTD ABCD 4 Bright
+			{
+				A_StopSound (CHAN_TURRET);
+				A_StartSound ("MBT/burning",CHAN_BURNING,CHANF_LOOPING,attenuation:0.8);
+				If (IsFrozen()) {Return;} //Don't do so if the game is frozen.
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+				A_SpawnParticle ("FFE50B",SPF_FULLBRIGHT,lifetime:RNGLife,size:RNGSize,xoff:RNGXOfs,yoff:RNGYOfs,zoff:32,velz:RNGVel,accelz:0.1,sizestep:0.1);
+				A_RandomizeParticleValues();
+			}
+			Loop;
+	}
+}
+
+//$GZDB_SKIP
+
+Class MBTShell : FastProjectile
+{
+	Default
+	{
+		Radius 8;
+		Height 8;
+		DamageFunction 1000; //No RNG that makes the shell do several times the damage randomly.
+		Speed 160;
+		FastSpeed 200;
+		MissileHeight 8;
+		MissileType "MBTShellTrail";
+		Decal "TankShellScorch";
+		DamageType "TankShell";
+		Species "MainBattleTank";
+		Projectile;
+		+Bright;
+		+CausePain;
+		+MThruSpecies;
+	}
+	Bool NoSmartAim; //Don't account for the targets' velocity if set to true.
+	Override Void PostBeginPlay()
+	{
+		Super.PostBeginPlay();
+		Warp (Self,60,zofs:4,flags:WARPF_NOCHECKPOSITION); //So the shell looks like it's being fired off the end of the tanks' barrel.
+		If (Tracer && NoSmartAim == False){VelIntercept (Tracer);}
+	}
+	Override Void Tick()
+	{
+		Super.Tick();
+		//If the shell is on the floor, then enter the FloorDeath state.
+		If ((pos.z - FloorZ) <= 1)
+		{
+			If (InStateSequence (CurState, ResolveState ("FloorDeath"))) {Return;}
+			SetStateLabel ("FloorDeath");
+		}
+		//If the shell is at the ceiling, then enter the CeilingDeath state.
+		If ((CeilingZ - pos.z + Height) <= 64)
+		{
+			If (InStateSequence (CurState, ResolveState ("CeilingDeath"))) {Return;}
+			SetStateLabel ("CeilingDeath");
+		}
+		//If the shell is within 128 MU of its' tracer (Its' target) and its' tracer is the chassis or turret of another tank, and that chassis or turret are hostile, turn MThruSpecies off.
+		If (Tracer && Target && Distance3D (Tracer) <= 128 && Tracer.GetClassName() == 'MainBattleTank' && Tracer.IsHostile (Self.Target)||
+		Tracer && Target && Distance3D (Tracer) <= 128 && Tracer.GetClassName() == 'MainBattleTankTurret' && Tracer.IsHostile (Self.Target))
+		{bMThruSpecies = False;}
+		//If the above conditions aren't met e.g if the shell misses the targetted enemy tank and flies away, then turn the flag back on to avoid it hitting a friendly tank.
+		Else {bMThruSpecies = True;}
+	}
+	Override Int SpecialMissileHit (Actor Victim)
+	{
+		Super.SpecialMissileHit(Victim);
+		//This makes any tank hit by an opposing tank turn on the opposing tank that fired at it. This includes making both the chassis and turret set the tank that fired at them as their target.
+		If (Victim && Target && Victim.GetClassName() == 'MainBattleTank' && Victim.IsHostile(Self.Target) ||
+		Victim && Target && Victim.GetClassName() == 'MainBattleTankTurret' && Victim.IsHostile(Self.Target))
+		{
+			Victim.Target = Self.Target;
+			//I need to figure out a way to make the whole tank attack whatever other tank shot it.
+			If (Victim && Victim.Master && Self.Target){Victim.Master.Target = Self.Target;}
+			Return -1;
+		}
+		Return -1;
+	}
+	enum ShellSoundSlot {CHAN_IMPACT = 19328} //Because using CHAN_BODY doesn't work for some reason.
+	States
+	{
+		Spawn:
+			TNT1 A 1;
+			TSHL A 1;
+			Goto Spawn+1;
+		Death:
+			DSHL A 0
+			{
+				A_Stop();
+				//If the shell exploded close enough to the floor, go to the floor death state instead.
+				If (pos.Z - FloorZ <= 48) {SetStateLabel ("FloorDeath");}
+			}
+			DSHL A 4
+			{
+				A_StartSound ("MBT/ShellImpact",CHAN_IMPACT,attenuation:0.6);
+				A_SetScale (2.0);
+				A_SetRenderStyle (1.0,STYLE_Add);
+				A_QuakeEx (4,4,3,35*3,0,360*2,flags:QF_SCALEDOWN);
+				A_Explode (256,500,alert:True,64);
+			}
+			DSHL BCDEFGHIJKLMNOPQRSTUVWXY 4;
+			Stop;
+		CeilingDeath:
+			PSHL A 0 A_Stop();
+			PSHL A 4
+			{
+				A_StartSound ("MBT/ShellImpact",CHAN_IMPACT,attenuation:0.6);
+				A_SetScale (-4.0);
+				A_SetRenderStyle (1.0,STYLE_Add);
+				A_QuakeEx (4,4,3,35*3,0,360*2,flags:QF_SCALEDOWN);
+				A_Explode (256,500,alert:True,64);
+			}
+			PSHL BCDEFGHIJKLMNO 4;
+			Stop;
+		FloorDeath:
+			PSHL A 0 A_Stop();
+			PSHL A 6
+			{
+				A_StartSound ("MBT/ShellImpact",CHAN_IMPACT,attenuation:0.6);
+				A_SetScale (4.0);
+				A_SetRenderStyle (1.0,STYLE_Add);
+				A_QuakeEx (4,4,3,35+35/2,0,360*2,flags:QF_SCALEDOWN);
+				A_Explode (256,500,alert:True,64);
+			}
+			PSHL BCDEFGHIJKLMNO 6;
+			Stop;
+	}
+}
+
+Class MBTShellTrail : Actor
+{
+	Default
+	{
+		RenderStyle "Add";
+		+NoBlockmap;
+		+NoInteraction;
+		Scale 0.20;
+	}
+	Override Void PostBeginPlay()
+	{
+		Super.PostBeginPlay();
+		Warp (Self,-36.0);
+	}
+	States
+	{
+		Spawn:
+			TSHL X 1
+			{
+				A_FadeOut (0.1);
+				A_SetScale (Scale.X+0.05);
+			}
+			Loop;
+	}
+}
+
+Class MBTExplosion : Actor
+{
+	Default
+	{
+		+NoInteraction;
+		RenderStyle "Add";
+		Scale 4.0;
+	}
+	Override Void Tick()
+	{
+		Super.Tick();
+		//So the explosion sticks to the tank if it plays while the tanks' wreckage is moving.
+		If (Master)
+		{
+			Warp (Master,flags:WARPF_INTERPOLATE);
+		}
+	}
+	States
+	{
+		Spawn:
+			ZTXP A 6 Bright NoDelay
+			{
+				A_StartSound ("MBT/TankExplode",847271,attenuation:0.4); //Doesn't work without an explicit sound slot.
+				A_Explode (256,384,alert:True);
+				A_QuakeEx (4,4,2,35*4,0,512+128,flags:QF_SCALEDOWN);
+			}
+			ZTXP BCDEFGHIJKLMNOPQRST 6 Bright;
+			Stop;
+	}
+}
+
+Class MBTFrontDamage : Actor
+{
+	Default
+	{
+		+NoBlockmap;
+		+NoInteraction;
+		+DontHarmSpecies;
+		DamageType "TankCrush";
+		Species "Tank";
+		Species "MainBattleTank";
+		Obituary "%o was flattened by a tank";
+	}
+	Override Void Tick()
+	{
+		Super.Tick();
+		//Moves the actor that performs the crushing damage of the tank in front of the chassis every tick, if it spawns with no master, it simply vanishes.
+		If (Master)
+		{
+			Warp (Master,72,flags:WARPF_NOCHECKPOSITION);
+		}
+		Else
+		{
+			Destroy();
+		}
+	}
+	States
+	{
+		Spawn:
+			//This makes the Front Damage actors' target the tank itself, so if it kills something, the tank itself will be the source of the damage.
+			TNT1 A 0 NoDelay {If (Master){Self.Target = Master;}}
+			Goto ConstantDamage;
+		ConstantDamage:
+			TNT1 A 12
+			{
+				//Performs damage as long as the chassis isn't in it's Spawn or Death state.
+				If (Master.InStateSequence (Master.CurState, Master.ResolveState ("Death"))) {Return;}
+				If (Master.InStateSequence (Master.CurState, Master.ResolveState ("Spawn"))) {Return;}
+				A_Explode (10,96,fulldamagedistance:96);
+			}
+			Loop;
+	}
+}

@@ -1,0 +1,75 @@
+Object MainBattleTankTurret
+{
+	Frame MBTFA {Light "TankFiring1"}
+	Frame MBTFB {Light "TankFiring2"}
+	Frame MBTFC {Light "TankFiring3"}
+	Frame MBTFD {Light "TankFiring4"}
+	Frame MBTFE {Light "TankFiring5"}
+	Frame MBTFF {Light "TankFiring6"}
+	Frame MBTFG {Light "TankFiring7"}
+	Frame MBTFH {Light "TankFiring8"}
+}
+
+PointLight TankFiring1
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 256
+	Attenuate 1 //True
+}
+
+PointLight TankFiring2
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 224
+	Attenuate 1 //True
+}
+
+PointLight TankFiring3
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 192
+	Attenuate 1 //True
+}
+
+PointLight TankFiring4
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 160
+	Attenuate 1 //True
+}
+
+PointLight TankFiring5
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 128
+	Attenuate 1 //True
+}
+
+PointLight TankFiring6
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 96
+	Attenuate 1 //True
+}
+
+PointLight TankFiring7
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 64
+	Attenuate 1 //True
+}
+
+PointLight TankFiring8
+{
+	Color 0.93 0.94 0.00
+	Offset 250 64 0
+	Size 32
+	Attenuate 1 //True
+}
