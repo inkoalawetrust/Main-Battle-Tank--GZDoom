@@ -1,4 +1,4 @@
-# Main-Battle-Tank--GZDoom
+# Main Battle Tank (GZDoom)
 A main battle tank NPC written in ZScript for GZDoom
 
 Well I don't know what else to say, I had made this months ago but wasn't able to put it up on GitHub due to PC being too old, but now that this isn't an issue, I uploaded it.
