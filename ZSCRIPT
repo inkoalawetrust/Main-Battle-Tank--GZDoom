@@ -1,4 +1,4 @@
-#Include "Decorations.zsc"
+#Include "TankDecorations.zsc"
 
 Class MainBattleTank : Actor
 {
@@ -86,6 +86,8 @@ Class MainBattleTank : Actor
 				Turret.A_SetTranslation ("Ice"); //Gives the turret the ice translation that actors get when frozen with "MDK ice".
 			}
 		}
+		
+		
 		//Stop all sounds if the game is frozen.
 		If (IsFrozen())
 		{
@@ -124,17 +126,17 @@ Class MainBattleTank : Actor
 
 		Turret = Spawn ("MainBattleTankTurret",self.pos); //Spawn the turret at the chassis' position.
 		Turret.Master = Self; //Make the chassis the turrets' master, so the turret can warp to the chassis.
-		Turret.Angle = Self.Angle; //Set the turrets' angle to that of the chassis.
+		If (!User_Stationary) Turret.Angle = Self.Angle; //Set the turrets' angle to that of the chassis. If the chassis isn't stationary.
 		If (User_NoSmartAim) {MainBattleTankTurret(Turret).NoSmartAim = True;} //If the NoSmartAim user variable is on, then set the similarly named internal variable that the turret has on.
-
-		If (User_NoCrushing) {Return;} //If the NoCrushing user variable is enabled, don't spawn the FrontDamage actor
-		FrontDamage = Spawn ("MBTFrontDamage",Self.pos); //Spawn the actor that applies the crushing damage in front of the tank when it's moving.
-		FrontDamage.Master = Self; //Make the tank chassis the actors' master.
-
+		
 		//If the chassis is set to ambush the player and/or is dormant, then set said flags to the turret as well.
 		If (Self.bAmbush && Turret) {Turret.bAmbush = True;}
 		If (Self.bDormant && Turret) {Turret.bDormant = True;}
 		If (Self.GetRenderStyle() == STYLE_None && Turret) {Turret.A_SetRenderStyle (1.0,STYLE_None);}
+		
+		If (User_NoCrushing) {Return;} //If the NoCrushing user variable is enabled, don't spawn the FrontDamage actor
+		FrontDamage = Spawn ("MBTFrontDamage",Self.pos); //Spawn the actor that applies the crushing damage in front of the tank when it's moving.
+		FrontDamage.Master = Self; //Make the tank chassis the actors' master.
 	}
 	Override Void OnDestroy() //Removes the turret and actor that performs damage in front of the tank if the chassis is removed.
 	{
@@ -163,9 +165,10 @@ Class MainBattleTank : Actor
 			MBCM A 8 A_LookEx (maxseedist:10240+2048,maxheardist:3072);
 			Loop;
 		See:
+			TNT1 A 0 A_JumpIf (User_Stationary,"SeeStatic");
 			MBCM AABB 2
 			{
-				A_Chase();
+				A_Chase(Null,Null);
 				A_QuakeEx (1,1,1,2,0,384); //So the ground shakes a bit as it moves across it.
 				//In theory the below code should make the tank keep some distance from any nearby players if it's friendly, in practive it does nothing for some reason.
 				If (A_IsPlayerClose (768) && Self.bFriendly == True) {bFrightened = True; A_Stop();}
@@ -173,12 +176,16 @@ Class MainBattleTank : Actor
 				If (Target && User_Fearless == False) //Null check, also checks if User_Fearless is on to run the code inside the brackets.
 				{
 					//Retreat if the target is close and about as big if not bigger than a Cyberdemon or if it's another tank. Or if the target is too close and has over 600 health.
-					If (Distance3D (Target) <= 1024 && Target.Height >= 100 && Target.Radius >= 24 || Distance3D (Target) <= 1024 && Target.GetClassName() == 'MainBattleTank' ||Distance3D (Target) <= 512 && Target.Health >= 600)
+					If (Distance3D (Target) <= 1024 && Target.Height >= 100 && Target.Radius >= 24 || Distance3D (Target) <= 1024 && Target.GetClassName() == 'MainBattleTank' || Distance3D (Target) <= 512 && Target.Health >= 600)
 					{
 						SetStateLabel ("MoveAway");
 					}
 				}
 			}
+			Loop;
+		SeeStatic:
+			TNT1 A 0 A_JumpIf (!User_Stationary,"See");
+			MBCM A 2 A_Chase (Null,Null,CHF_DONTMOVE|CHF_DONTTURN);
 			Loop;
 		MoveAway:
 			TNT1 A 0
@@ -343,7 +350,7 @@ Class MainBattleTankTurret : Actor
 				A_LookEx (LOF_NOJUMP,maxseedist:10240+2048,maxheardist:3072,label:"Alert");
 				//Replicates the behaviour of A_LookEx without the LOF_NOJUMP flag on.
 				If (Self.Target != Null && bAmbush == False){SetStateLabel ("Alert");}
-				If (Master) {Self.Angle = Master.Angle;}
+				If (Master && !MainBattleTank(Master).User_Stationary) {Self.Angle = Master.Angle;}
 				If (Master && bAmbush == False)
 				{
 					//If the chassis' has a target, the transfer that target pointer to the turret as well.
@@ -362,14 +369,14 @@ Class MainBattleTankTurret : Actor
 			MBTI A 8
 			{
 				A_StopSound (CHAN_TURRET); //Stop the rotating sound if the turret is simply alert.
-				If (Master) {Self.Angle = Master.Angle;} //Sets the turrets' angle to that of the chassis when it's not firing.
+				If (Master && !MainBattleTank(Master).User_Stationary) {Self.Angle = Master.Angle;} //Sets the turrets' angle to that of the chassis when it's not firing.
 				A_Chase (null,"FaceTarget",CHF_DONTMOVE|CHF_DONTTURN);
 				//Copied over from the code below, so the turret forgets its' target if it is dead, this is basically here just in case.
 				If ( (Target && Target.Health <= 0) || (Target && Target.Health <= 0) )
 				{
 					Self.Target = Null;
 				}
-				If (Master) {Self.Angle = Master.Angle;}
+				If (Master && !MainBattleTank(Master).User_Stationary) {Self.Angle = Master.Angle;}
 			}
 			Loop;
 		FaceTarget:
